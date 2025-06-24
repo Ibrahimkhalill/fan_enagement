@@ -95,14 +95,14 @@ def list_users(request):
 @permission_classes([IsAuthenticated])
 def user_profile(request):
     try:
-        profile = request.user.user_profile
+        profile = request.user
     except UserProfile.DoesNotExist:
         profile = UserProfile.objects.create(user=request.user)
 
     if request.method == 'GET':
-        subscription = Subscription.objects.get(user=request.user)
-        serializer = SubscriptionSerializer(subscription)
-        # serializer = UserProfileSerializer(profile)
+        # subscription = Subscription.objects.get(user=request.user)
+        # serializer = SubscriptionSerializer(subscription)
+        serializer = CustomUserSerializer(profile)
         return Response(serializer.data)
 
     if request.method == 'PUT':

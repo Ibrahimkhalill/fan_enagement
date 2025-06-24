@@ -47,7 +47,7 @@ class CustomUserCreateSerializer(serializers.ModelSerializer):
             first_name=first_name,
             last_name = last_name
         )
-        Subscription.objects.create(user=user)
+        # Subscription.objects.create(user=user)
         return user
 
 class OTPSerializer(serializers.ModelSerializer):
