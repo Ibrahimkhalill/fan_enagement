@@ -10,7 +10,7 @@ class CustomUserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'role', 'user_profile']
+        fields = ['id', 'email', 'role', 'is_verified', 'user_profile',]
         read_only_fields = ['id', 'is_active', 'is_staff', 'is_superuser']
 
     def get_user_profile(self, obj):
@@ -41,7 +41,7 @@ class CustomUserCreateSerializer(serializers.ModelSerializer):
             errors['password'] = ['This field is required']
         if not data.get('name'):
             errors['name'] = ['This field is required']
-        if data.get('email') and User.objects.filter(email=data['email']).exists():
+        if data.get('email') and User.objects.filter(email=data['email'], is_verified=True).exists():
             errors['email'] = ['A user with this email already exists']
         if errors:
             raise serializers.ValidationError(errors)
@@ -49,6 +49,7 @@ class CustomUserCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         name = validated_data.pop('name')
+        User.objects.filter(email=validated_data['email'], is_verified=False).delete()
         user = User.objects.create_user(
             email=validated_data['email'],
             password=validated_data['password'],
@@ -107,7 +108,10 @@ class LoginSerializer(serializers.Serializer):
             raise serializers.ValidationError(errors)
 
         user = authenticate(email=email, password=password)
-        if not user or not user.is_active:
+        if not user:
             errors['credentials'] = ['Invalid email or password']
+            raise serializers.ValidationError(errors)
+        if not user.is_active:
+            errors['credentials'] = ['Account not verified. Please verify your email with the OTP sent']
             raise serializers.ValidationError(errors)
         return user

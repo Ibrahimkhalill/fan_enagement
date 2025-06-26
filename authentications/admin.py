@@ -9,11 +9,7 @@ from .models import CustomUser, UserProfile, OTP
 class CustomUserAdmin(UserAdmin):
     list_display = ('email', 'role', 'is_staff', 'is_active')  # Added 'role'
     list_filter = ('role', 'is_staff', 'is_active', 'is_superuser')  # Added 'role' to filters
-    fieldsets = (
-        (None, {'fields': ('email', 'password')}),
-        ('Personal Info', {'fields': ('first_name', 'last_name', 'role')}),  # Added 'role'
-        ('Permissions', {'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
-    )
+    
     add_fieldsets = (
         (None, {
             'classes': ('wide',),
@@ -29,7 +25,7 @@ class CustomUserAdmin(UserAdmin):
 # Customize GuideProfile admin
 
 # Register CustomUser
-admin.site.register(CustomUser, CustomUserAdmin)
+admin.site.register(CustomUser)
 
 # Register other models
 @admin.register(UserProfile)

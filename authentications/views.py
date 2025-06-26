@@ -44,8 +44,25 @@ def send_otp_email(email, otp):
 def register_user(request):
     serializer = CustomUserCreateSerializer(data=request.data)
     if serializer.is_valid():
-        serializer.save()
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        user = serializer.save()
+        # Send OTP for verification
+        otp = generate_otp()
+        otp_data = {'email': user.email, 'otp': otp}
+        otp_serializer = OTPSerializer(data=otp_data)
+        if otp_serializer.is_valid():
+            otp_serializer.save()
+            try:
+                send_otp_email(email=user.email, otp=otp)
+            except Exception as e:
+                return error_response(
+                    code=500,
+                    message="Failed to send OTP email",
+                    details={"error": [str(e)]}
+                )
+        return Response({
+            "message": "User registered. Please verify your email with the OTP sent",
+            "user": serializer.data
+        }, status=status.HTTP_201_CREATED)
     return error_response(code=400, details=serializer.errors)
 
 @api_view(['POST'])
@@ -56,6 +73,7 @@ def login(request):
         user = serializer.validated_data
         refresh = RefreshToken.for_user(user)
         try:
+            is_verified = user.is_verified
             profile = user.user_profile
         except UserProfile.DoesNotExist:
             profile = UserProfile.objects.create(user=user, name=user.email.split('@')[0])
@@ -63,6 +81,7 @@ def login(request):
         return Response({
             "access_token": str(refresh.access_token),
             "refresh_token": str(refresh),
+            "is_verified" : is_verified,
             "profile": profile_serializer.data
         }, status=status.HTTP_200_OK)
     return error_response(code=401, details=serializer.errors)
@@ -103,6 +122,19 @@ def create_otp(request):
             details={"email": ["This field is required"]}
         )
     
+    try:
+        user = User.objects.get(email=email)
+        if user.is_verified:
+            return error_response(
+                code=400,
+                details={"email": ["This account is already verified"]}
+            )
+    except User.DoesNotExist:
+        return error_response(
+            code=404,
+            details={"email": ["No user exists with this email"]}
+        )
+    
     otp = generate_otp()
     otp_data = {'email': email, 'otp': otp}
     OTP.objects.filter(email=email).delete()
@@ -122,7 +154,7 @@ def create_otp(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
-def verify_otp(request):
+def verify_otp_reset(request):
     email = request.data.get('email')
     otp_value = request.data.get('otp')
     
@@ -150,6 +182,55 @@ def verify_otp(request):
     except OTP.DoesNotExist:
         return error_response(
             code=404,
+            details={"email": ["No OTP found for this email"]})
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def verify_otp(request):
+    email = request.data.get('email')
+    otp_value = request.data.get('otp')
+    
+    if not email or not otp_value:
+        details = {}
+        if not email:
+            details["email"] = ["This field is required"]
+        if not otp_value:
+            details["otp"] = ["This field is required"]
+        return error_response(code=400, details=details)
+    
+    try:
+        otp_obj = OTP.objects.get(email=email)
+        if otp_obj.otp != otp_value:
+            return error_response(
+                code=400,
+                details={"otp": ["The provided OTP is invalid"]}
+            )
+        if otp_obj.is_expired():
+            return error_response(
+                code=400,
+                details={"otp": ["The OTP has expired"]}
+            )
+        
+        # Verify the user
+        try:
+            user = User.objects.get(email=email)
+            if user.is_verified:
+                return error_response(
+                    code=400,
+                    details={"email": ["This account is already verified"]}
+                )
+            user.is_verified = True
+            user.save()
+            otp_obj.delete()
+            return Response({"message": "Email verified successfully. You can now log in"})
+        except User.DoesNotExist:
+            return error_response(
+                code=404,
+                details={"email": ["No user exists with this email"]}
+            )
+    except OTP.DoesNotExist:
+        return error_response(
+            code=404,
             details={"email": ["No OTP found for this email"]}
         )
 
@@ -164,7 +245,12 @@ def request_password_reset(request):
         )
     
     try:
-        User.objects.get(email=email)
+        user = User.objects.get(email=email)
+        if not user.is_verified:
+            return error_response(
+                code=400,
+                details={"email": ["Please verify your email before resetting your password"]}
+            )
     except User.DoesNotExist:
         return error_response(
             code=404,
@@ -219,6 +305,11 @@ def reset_password(request):
             )
 
         user = User.objects.get(email=email)
+        if not user.is_verified:
+            return error_response(
+                code=400,
+                details={"email": ["Please verify your email before resetting your password"]}
+            )
         try:
             validate_password(new_password, user)
         except ValidationError as e:
