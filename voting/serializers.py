@@ -7,6 +7,12 @@ from player.serializers import PlayerSerializer
 from match.models import Match
 from authentications.serializers import CustomUserSerializer
 
+class MatchSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Match
+        fields = ['id', 'team_a', 'team_b', 'date', 'time', 'status', 'selected_players']
+        read_only_fields = ['id', 'status', 'selected_players']
+
 class VotingSerializer(serializers.ModelSerializer):
     user = CustomUserSerializer(read_only=True)
     match = serializers.PrimaryKeyRelatedField(queryset=Match.objects.all())
@@ -14,24 +20,67 @@ class VotingSerializer(serializers.ModelSerializer):
     selected_players_ids = serializers.PrimaryKeyRelatedField(
         queryset=Player.objects.all(), source='selected_players', many=True, write_only=True, required=False
     )
+    who_will_win = serializers.CharField()
 
     class Meta:
         model = Voting
         fields = ['id', 'user', 'match', 'who_will_win', 'goal_difference', 'selected_players', 'selected_players_ids', 'points_earned']
+        read_only_fields = ['id', 'user', 'points_earned']
 
     def validate(self, data):
         match = data['match']
         if match.status == 'finished':
-            raise serializers.ValidationError("Cannot vote on a finished match.")
+            raise serializers.ValidationError({"match": "Cannot vote on a finished match."})
+        
         selected_players = data.get('selected_players', [])
         if len(selected_players) > 3:
-            raise serializers.ValidationError("Cannot select more than 3 players.")
+            raise serializers.ValidationError({"selected_players": "Cannot select more than 3 players."})
         for player in selected_players:
             if player not in match.selected_players.all():
-                raise serializers.ValidationError(f"Player {player.name} is not in this match.")
-        if data['who_will_win'] not in ['team_a', 'team_b', 'draw']:  # Added draw
-            raise serializers.ValidationError("who_will_win must be 'team_a', 'team_b', or 'draw'.")
+                raise serializers.ValidationError({"selected_players": f"Player {player.name} is not in this match."})
+        
+        who_will_win = data['who_will_win']
+        if who_will_win not in [match.team_a, match.team_b, 'Draw']:
+            raise serializers.ValidationError({
+                "who_will_win": f"Must be '{match.team_a}', '{match.team_b}', or 'Draw'."
+            })
+        
         return data
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        match = instance.match
+        if instance.who_will_win == 'team_a':
+            representation['who_will_win'] = match.team_a
+        elif instance.who_will_win == 'team_b':
+            representation['who_will_win'] = match.team_b
+        else:
+            representation['who_will_win'] = 'Draw'
+        return representation
+
+    def to_internal_value(self, data):
+        data = data.copy()
+        match_id = data.get('match')
+        if not match_id:
+            raise serializers.ValidationError({"match": "This field is required."})
+        try:
+            match = Match.objects.get(id=match_id)
+        except Match.DoesNotExist:
+            raise serializers.ValidationError({"match": "Invalid match ID."})
+        
+        who_will_win = data.get('who_will_win')
+        if who_will_win == match.team_a:
+            data['who_will_win'] = 'team_a'
+        elif who_will_win == match.team_b:
+            data['who_will_win'] = 'team_b'
+        elif who_will_win == 'Draw':
+            data['who_will_win'] = 'draw'
+        else:
+            raise serializers.ValidationError({
+                "who_will_win": f"Must be '{match.team_a}', '{match.team_b}', or 'Draw'."
+            })
+        
+        return super().to_internal_value(data)
 
     def create(self, validated_data):
         user = self.context['request'].user
@@ -49,13 +98,5 @@ class FanSerializer(serializers.ModelSerializer):
     def get_rank(self, obj):
         # Get rank from context (integer)
         rank = self.context.get('ranks', {}).get(self.instance.index(obj) if self.instance else 0, 1)
-        # Format as 1st, 2nd, 3rd, etc.
-        if rank % 10 == 1 and rank % 100 != 11:
-            suffix = 'st'
-        elif rank % 10 == 2 and rank % 100 != 12:
-            suffix = 'nd'
-        elif rank % 10 == 3 and rank % 100 != 13:
-            suffix = 'rd'
-        else:
-            suffix = 'th'
-        return f"{rank}{suffix}"
+        
+        return rank

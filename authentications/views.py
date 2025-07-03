@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 from rest_framework.response import Response
 from rest_framework import status
 from django.contrib.auth import get_user_model
-from .models import OTP, UserProfile
+from .models import OTP, UserProfile , CustomUser
 from .serializers import (
     CustomUserSerializer,
     CustomUserCreateSerializer,
@@ -81,6 +81,7 @@ def login(request):
         return Response({
             "access_token": str(refresh.access_token),
             "refresh_token": str(refresh),
+            "role": user.role,
             "is_verified" : is_verified,
             "profile": profile_serializer.data
         }, status=status.HTTP_200_OK)
@@ -102,7 +103,8 @@ def user_profile(request):
         profile = UserProfile.objects.create(user=request.user, name=request.user.email.split('@')[0])
 
     if request.method == 'GET':
-        serializer = UserProfileSerializer(profile)
+        user = CustomUser.objects.get(id=request.user.id)
+        serializer = CustomUserSerializer(user)
         return Response(serializer.data)
 
     if request.method == 'PUT':

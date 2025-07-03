@@ -6,6 +6,12 @@ User = get_user_model()
 class Match(models.Model):
     team_a = models.CharField(max_length=100)
     team_b = models.CharField(max_length=100)
+    team_a_pics = models.ImageField(
+        upload_to='matches/', blank=True, null=True,
+    )
+    team_b_pics =  models.ImageField(
+        upload_to='matches/', blank=True, null=True,
+    )
     time = models.TimeField()
     date = models.DateField()
     selected_players = models.ManyToManyField(Player, blank=True)
@@ -37,3 +43,10 @@ class Match(models.Model):
         else:
             self.win_name = None
         super().save(*args, **kwargs)
+
+    class Meta:
+        ordering = ['date', 'time']
+        indexes = [
+            models.Index(fields=['date', 'time']),
+            models.Index(fields=['status']),
+        ]
