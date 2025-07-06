@@ -187,7 +187,6 @@ def verify_otp_reset(request):
             details={"email": ["No OTP found for this email"]})
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
 def verify_otp(request):
     email = request.data.get('email')
     otp_value = request.data.get('otp')
@@ -287,8 +286,7 @@ def reset_password(request):
         details = {}
         if not email:
             details["email"] = ["This field is required"]
-        if not otp_value:
-            details["otp"] = ["This field is required"]
+        
         if not new_password:
             details["new_password"] = ["This field is required"]
         return error_response(code=400, details=details)
@@ -300,12 +298,7 @@ def reset_password(request):
                 code=400,
                 details={"otp": ["The provided OTP is invalid"]}
             )
-        if otp_obj.is_expired():
-            return error_response(
-                code=400,
-                details={"otp": ["The OTP has expired"]}
-            )
-
+       
         user = User.objects.get(email=email)
         if not user.is_verified:
             return error_response(
